@@ -3,12 +3,20 @@ local message = _G.message or "hi"
 local success = false
 local TextChatService = game:GetService("TextChatService")
 
+-- Try new TextChatService
 pcall(function()
-    local channel = TextChatService:WaitForChild("TextChannels"):WaitForChild("RBXGeneral")
-    channel:SendAsync(message)
-    success = true
+    local channels = TextChatService:WaitForChild("TextChannels")
+    local channel = channels:FindFirstChild("RBXGeneral") 
+                 or channels:FindFirstChild("RBXSystem") 
+                 or channels:GetChildren()[1]
+
+    if channel then
+        channel:SendAsync(message)
+        success = true
+    end
 end)
 
+-- Fallback to LegacyChatService
 if not success then
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -21,6 +29,6 @@ if not success then
             warn("SayMessageRequest not found in DefaultChatSystemChatEvents.")
         end
     else
-        warn("Neither TextChatService nor DefaultChatSystemChatEvents found.")
+        warn("No valid chat channels found in TextChatService, and DefaultChatSystemChatEvents missing.")
     end
 end
