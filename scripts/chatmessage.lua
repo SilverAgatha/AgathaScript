@@ -1,3 +1,5 @@
+local message = _G.message or "hi"
+
 local success = false
 local TextChatService = game:GetService("TextChatService")
 
