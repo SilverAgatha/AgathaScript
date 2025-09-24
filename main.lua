@@ -12,17 +12,164 @@ screenGui.Name = "AgathaScriptUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
-local ContentFrames = {}
-local miscFrame = Instance.new("Frame")
-ContentFrames["Misc"] = miscFrame
-miscFrame.Name = "Misc"
-miscFrame.Size = UDim2.new(0, 300, 0, 300)
-miscFrame.Position = UDim2.new(0, 50, 0, 50)
-miscFrame.BackgroundTransparency = 0.3
-miscFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-miscFrame.Visible = true
-miscFrame.ZIndex = 10
-miscFrame.Parent = screenGui
+-- Top Bar
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 40)
+topBar.Position = UDim2.new(0, 0, 0, 0)
+topBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+topBar.BorderSizePixel = 0
+topBar.ZIndex = 20
+topBar.Parent = screenGui
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(0, 200, 1, 0)
+titleLabel.Position = UDim2.new(0, 20, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "AgathaScript"
+titleLabel.Font = Enum.Font.SourceSansSemibold
+titleLabel.TextSize = 24
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.ZIndex = 21
+titleLabel.Parent = topBar
+
+-- Sidebar
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2.new(0, 120, 1, -40)
+sidebar.Position = UDim2.new(0, 0, 0, 40)
+sidebar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+sidebar.BorderSizePixel = 0
+sidebar.ZIndex = 10
+sidebar.Parent = screenGui
+
+local miscTab = Instance.new("TextButton")
+miscTab.Name = "MiscTab"
+miscTab.Size = UDim2.new(1, 0, 0, 50)
+miscTab.Position = UDim2.new(0, 0, 0, 0)
+miscTab.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+miscTab.Text = "Misc"
+miscTab.Font = Enum.Font.SourceSansSemibold
+miscTab.TextSize = 20
+miscTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+miscTab.BorderSizePixel = 0
+miscTab.ZIndex = 11
+miscTab.Parent = sidebar
+
+-- Main Panel (Misc)
+local miscPanel = Instance.new("Frame")
+miscPanel.Name = "MiscPanel"
+miscPanel.Size = UDim2.new(1, -140, 1, -60)
+miscPanel.Position = UDim2.new(0, 130, 0, 50)
+miscPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+miscPanel.BorderSizePixel = 0
+miscPanel.ZIndex = 10
+miscPanel.Parent = screenGui
+
+local sectionLabel = Instance.new("TextLabel")
+sectionLabel.Name = "SectionLabel"
+sectionLabel.Size = UDim2.new(1, 0, 0, 40)
+sectionLabel.Position = UDim2.new(0, 0, 0, 0)
+sectionLabel.BackgroundTransparency = 1
+sectionLabel.Text = "Flight Settings"
+sectionLabel.Font = Enum.Font.SourceSansSemibold
+sectionLabel.TextSize = 22
+sectionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+sectionLabel.ZIndex = 11
+sectionLabel.Parent = miscPanel
+
+-- Flight Toggle Button
+local FlightButton = Instance.new("TextButton")
+FlightButton.Name = "FlightButton"
+FlightButton.Size = UDim2.new(0, 180, 0, 40)
+FlightButton.Position = UDim2.new(0, 20, 0, 60)
+FlightButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+FlightButton.Text = "Flight: OFF"
+FlightButton.Font = Enum.Font.SourceSans
+FlightButton.TextSize = 18
+FlightButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+FlightButton.BorderSizePixel = 0
+FlightButton.ZIndex = 12
+FlightButton.Parent = miscPanel
+
+-- Keybind Option
+local KeybindLabel = Instance.new("TextLabel")
+KeybindLabel.Name = "KeybindLabel"
+KeybindLabel.Size = UDim2.new(0, 100, 0, 30)
+KeybindLabel.Position = UDim2.new(0, 20, 0, 110)
+KeybindLabel.BackgroundTransparency = 1
+KeybindLabel.Text = "Keybind:"
+KeybindLabel.Font = Enum.Font.SourceSans
+KeybindLabel.TextSize = 18
+KeybindLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+KeybindLabel.ZIndex = 12
+KeybindLabel.Parent = miscPanel
+
+local KeybindButton = Instance.new("TextButton")
+KeybindButton.Name = "KeybindButton"
+KeybindButton.Size = UDim2.new(0, 60, 0, 30)
+KeybindButton.Position = UDim2.new(0, 130, 0, 110)
+KeybindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+KeybindButton.Text = "F"
+KeybindButton.Font = Enum.Font.SourceSans
+KeybindButton.TextSize = 18
+KeybindButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+KeybindButton.BorderSizePixel = 0
+KeybindButton.ZIndex = 12
+KeybindButton.Parent = miscPanel
+
+KeybindButton.MouseButton1Click:Connect(function()
+    KeybindButton.Text = "..."
+    local conn
+    conn = UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.UserInputType == Enum.UserInputType.Keyboard then
+            FlightKey = input.KeyCode
+            KeybindButton.Text = input.KeyCode.Name
+            conn:Disconnect()
+        end
+    end)
+end)
+
+-- Speed Slider
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Name = "SpeedLabel"
+SpeedLabel.Size = UDim2.new(0, 180, 0, 30)
+SpeedLabel.Position = UDim2.new(0, 20, 0, 160)
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Text = "Flight Speed: " .. tostring(FlightSpeed)
+SpeedLabel.Font = Enum.Font.SourceSans
+SpeedLabel.TextSize = 16
+SpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SpeedLabel.ZIndex = 12
+SpeedLabel.Parent = miscPanel
+
+local SpeedSlider = Instance.new("Frame")
+SpeedSlider.Name = "SpeedSlider"
+SpeedSlider.Size = UDim2.new(0, 180, 0, 20)
+SpeedSlider.Position = UDim2.new(0, 20, 0, 190)
+SpeedSlider.BackgroundTransparency = 1
+SpeedSlider.ZIndex = 12
+SpeedSlider.Parent = miscPanel
+
+local SliderBar = Instance.new("Frame")
+SliderBar.Name = "SliderBar"
+SliderBar.Size = UDim2.new(1, 0, 0, 6)
+SliderBar.Position = UDim2.new(0, 0, 0.5, -3)
+SliderBar.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+SliderBar.BorderSizePixel = 0
+SliderBar.ZIndex = 13
+SliderBar.Parent = SpeedSlider
+
+local SliderKnob = Instance.new("Frame")
+SliderKnob.Name = "SliderKnob"
+SliderKnob.Size = UDim2.new(0, 16, 0, 16)
+SliderKnob.Position = UDim2.new((FlightSpeed-50)/950, -8, 0.5, -8)
+SliderKnob.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+SliderKnob.BorderSizePixel = 0
+SliderKnob.ZIndex = 14
+SliderKnob.Parent = SpeedSlider
 
 local FlightButton = Instance.new("TextButton")
 FlightButton.Name = "FlightButton"
