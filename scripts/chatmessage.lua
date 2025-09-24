@@ -1,4 +1,4 @@
-local msg = message or "hi"
+local msg = message or "hello"
 
 local success = false
 local TextChatService = game:GetService("TextChatService")
