@@ -1,4 +1,5 @@
 # AgathaScript
+
 Welcome to AgathaScript. This is our library containing our scripts.
 
 -Chatmessage: A simple script sending a desired message in chat.
