@@ -1,712 +1,758 @@
 --[[
-	AgathaScript UI Recreation
-	This script rebuilds the provided reference interface using Roblox UI instances.
-	It is designed for execution via an external exploit environment and includes:
-	  * ScreenGui construction with sidebar navigation and settings panel.
-	  * Toggleable visibility through a configurable keybind (default: Z).
-	  * Unload button that destroys all created instances and disconnects events.
+  Advanced UI recreation approximating the style / layout of the provided screenshot.
+  Focus: VISUAL FIDELITY (colors, spacing, typography feel, panel layout, nav, status bar).
+  No gameplay / exploit features implemented; all controls are placeholders.
 
-	The layout intentionally mirrors the supplied design while keeping functionality scoped
-	to the requirements. Additional panels such as configuration/themes/search logic are
-	represented visually only.
+  Notes:
+  * Color + spacing choices are hand‑tuned by eye from the screenshot (may refine further).
+  * Brand text kept generic. Replace as desired.
+  * Pure Luau (Roblox) – expects Gotham family fonts.
+  * Built for easy extension: factories for sections, buttons, toggles below.
 ]]
 
-local globalEnv = _G
+-- Destroy previous instance if re-run
+local existing = game:GetService("CoreGui"):FindFirstChild("AgathaUI") or game.Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("AgathaUI")
+if existing then existing:Destroy() end
 
-local rawGetGenv = rawget(globalEnv, "getgenv")
-local getgenvFunction = (type(rawGetGenv) == "function") and rawGetGenv or nil
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-if not getgenvFunction then
-	local shared = rawget(globalEnv, "__AGATHA_GEN_ENV")
-	if not shared then
-		shared = {}
-		rawset(globalEnv, "__AGATHA_GEN_ENV", shared)
-	end
-	getgenvFunction = function()
-		return shared
-	end
-end
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AgathaUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = playerGui
 
-local robloxGame = rawget(globalEnv, "game")
-local Enum = rawget(globalEnv, "Enum")
-local Instance = rawget(globalEnv, "Instance")
-local Color3 = rawget(globalEnv, "Color3")
-local Vector2 = rawget(globalEnv, "Vector2")
-local UDim2 = rawget(globalEnv, "UDim2")
-local UDim = rawget(globalEnv, "UDim")
-local TweenInfo = rawget(globalEnv, "TweenInfo")
-local gethuiFunction = rawget(globalEnv, "gethui")
-
-if not robloxGame or not Enum or not Instance or not Color3 or not Vector2 or not UDim2 or not UDim or not TweenInfo then
-	error("AgathaScript requires Roblox GUI globals to be available.")
-end
-
-local tableClear = rawget(table, "clear")
-
-local function clearTable(targetTable)
-	if tableClear then
-		tableClear(targetTable)
-		return
-	end
-	for key in pairs(targetTable) do
-		targetTable[key] = nil
-	end
-end
-
-local Players = robloxGame:GetService("Players")
-local UserInputService = robloxGame:GetService("UserInputService")
-local TweenService = robloxGame:GetService("TweenService")
-local CoreGui = robloxGame:GetService("CoreGui")
-
-local env = getgenvFunction()
-env = env or {}
-
-if env.AgathaScript and type(env.AgathaScript) == "table" then
-	local existingUnload = env.AgathaScript.Unload
-	if type(existingUnload) == "function" then
-		pcall(existingUnload)
-	end
-end
-
--- Shared state for this session -------------------------------------------------------
-local state = {
-	Connections = {},
-	ToggleKey = Enum.KeyCode.Z,
-	ToggleKeyName = "Z",
-	Visible = true,
-	CapturingKey = false,
-	CurrentTab = "Settings",
+-- Theme palette (eyeballed from screenshot)
+local colors = {
+    bgWindow        = Color3.fromRGB(11,11,11),
+    bgSidebar       = Color3.fromRGB(9,9,9),
+    navIdle         = Color3.fromRGB(20,20,20),
+    navHover        = Color3.fromRGB(34,34,34),
+    navActive       = Color3.fromRGB(26,26,26),
+    panel           = Color3.fromRGB(25,25,25),
+    panelBorder     = Color3.fromRGB(45,45,45),
+    controlIdle     = Color3.fromRGB(38,38,38),
+    controlDisabled = Color3.fromRGB(31,31,31),
+    highlight       = Color3.fromRGB(54,54,54),
+    strokeSoft      = Color3.fromRGB(60,60,60),
+    accent          = Color3.fromRGB(255,170,0),
+    text            = Color3.fromRGB(230,230,230),
+    textDim         = Color3.fromRGB(150,150,150),
+    textFaint       = Color3.fromRGB(110,110,110),
+    toggleOn        = Color3.fromRGB(240,240,240),
+    toggleTrack     = Color3.fromRGB(34,34,34),
+    toggleTrackOn   = Color3.fromRGB(46,46,46)
 }
 
-env.AgathaScript = state
+-- Main window
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 740, 0, 540)
+Main.Position = UDim2.new(0.5, -370, 0.5, -270)
+Main.BackgroundColor3 = colors.bgWindow
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
 
-local function trackConnection(conn)
-	if conn then
-		table.insert(state.Connections, conn)
-	end
-	return conn
-end
-
-local function getParentGui()
-	local success, result = pcall(function()
-		return (gethuiFunction and gethuiFunction()) or CoreGui
-	end)
-	if success and result then
-		return result
-	end
-	return CoreGui
-end
-
-local parentGui = getParentGui()
-
--- Style palette ----------------------------------------------------------------------
-local palette = {
-	Background = Color3.fromRGB(18, 18, 18),
-	Sidebar = Color3.fromRGB(14, 14, 14),
-	SidebarAccent = Color3.fromRGB(44, 44, 44),
-	Section = Color3.fromRGB(24, 24, 24),
-	SectionStroke = Color3.fromRGB(60, 60, 60),
-	TextPrimary = Color3.fromRGB(236, 236, 236),
-	TextSecondary = Color3.fromRGB(172, 172, 172),
-	Accent = Color3.fromRGB(207, 71, 71),
-	Highlight = Color3.fromRGB(96, 96, 96),
-}
-
-local fontPrimary = Enum.Font.GothamSemibold
-local fontSecondary = Enum.Font.Gotham
-
--- Formatting helpers -----------------------------------------------------------------
-local function formatKeyName(keyCode)
-	if not keyCode or keyCode == Enum.KeyCode.Unknown or not keyCode.Name then
-		return "?"
-	end
-
-	local name = keyCode.Name or tostring(keyCode)
-	name = name:gsub("Enum.KeyCode.", "")
-	name = name:gsub("Left", "L")
-	name = name:gsub("Right", "R")
-	name = name:gsub("Bracket", " Bracket")
-	name = name:gsub("Plus", "+")
-
-	if name == "Return" then
-		name = "Enter"
-	elseif name == "Backspace" then
-		name = "Back"
-	elseif name == "Slash" then
-		name = "/"
-	elseif name == "Period" then
-		name = "."
-	end
-
-	return name:upper()
-end
-
--- ScreenGui and root container -------------------------------------------------------
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AgathaScriptUI"
-screenGui.IgnoreGuiInset = true
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-screenGui.DisplayOrder = 999999
-screenGui.Parent = parentGui
-
-state.ScreenGui = screenGui
-
-local shadow = Instance.new("Frame")
+-- Soft shadow
+local shadow = Instance.new("ImageLabel")
 shadow.Name = "Shadow"
-shadow.Parent = screenGui
-shadow.AnchorPoint = Vector2.new(0.5, 0.5)
-shadow.Position = UDim2.new(0.5, 6, 0.5, 10)
-shadow.Size = UDim2.new(0, 722, 0, 462)
-shadow.BackgroundColor3 = Color3.new(0, 0, 0)
-shadow.BackgroundTransparency = 0.65
 shadow.ZIndex = 0
-shadow.BorderSizePixel = 0
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://5028857084"
+shadow.ImageTransparency = 0.4
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(24,24,276,276)
+shadow.Size = UDim2.new(1, 32, 1, 32)
+shadow.Position = UDim2.new(0, -16, 0, -16)
+shadow.Parent = Main
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainContainer"
-mainFrame.Parent = screenGui
-mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-mainFrame.Size = UDim2.new(0, 720, 0, 460)
-mainFrame.BackgroundColor3 = palette.Background
-mainFrame.BorderSizePixel = 0
-mainFrame.ZIndex = 1
+-- Dragging logic
+ do
+    local dragging, dragStart, startPos
+    local dragTarget = Main
+    local UIS = game:GetService("UserInputService")
+    dragTarget.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = dragTarget.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            dragTarget.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+ end
 
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 18)
-mainCorner.Parent = mainFrame
+-- Sidebar
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 185, 1, 0)
+Sidebar.BackgroundColor3 = colors.bgSidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Main
 
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = Color3.fromRGB(34, 34, 34)
-mainStroke.Thickness = 1
-mainStroke.Parent = mainFrame
+local sideLayout = Instance.new("UIListLayout")
+sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sideLayout.Padding = UDim.new(0, 4)
+sideLayout.Parent = Sidebar
 
--- Sidebar ---------------------------------------------------------------------------
-local sidebar = Instance.new("Frame")
-sidebar.Name = "Sidebar"
-sidebar.Parent = mainFrame
-sidebar.BackgroundColor3 = palette.Sidebar
-sidebar.BorderSizePixel = 0
-sidebar.Position = UDim2.new(0, 0, 0, 0)
-sidebar.Size = UDim2.new(0, 210, 1, 0)
-sidebar.ZIndex = 2
-sidebar.ClipsDescendants = true
+local sidePadding = Instance.new("UIPadding")
+sidePadding.PaddingTop = UDim.new(0, 52)
+sidePadding.PaddingLeft = UDim.new(0, 8)
+sidePadding.PaddingRight = UDim.new(0, 8)
+sidePadding.Parent = Sidebar
 
-local sidebarCorner = Instance.new("UICorner")
-sidebarCorner.CornerRadius = UDim.new(0, 18)
-sidebarCorner.Parent = sidebar
+-- Title bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 50)
+TitleBar.BackgroundColor3 = colors.bgSidebar
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = Main
 
-local sidebarPadding = Instance.new("UIPadding")
-sidebarPadding.Parent = sidebar
-sidebarPadding.PaddingLeft = UDim.new(0, 18)
-sidebarPadding.PaddingTop = UDim.new(0, 20)
-sidebarPadding.PaddingRight = UDim.new(0, 12)
+local TitleText = Instance.new("TextLabel")
+TitleText.Name = "Title"
+TitleText.BackgroundTransparency = 1
+TitleText.Position = UDim2.new(0, 12, 0, 0)
+TitleText.Size = UDim2.new(0, 160, 1, 0)
+TitleText.Font = Enum.Font.GothamSemibold
+TitleText.Text = "AX-SCRIPTS"
+TitleText.TextColor3 = colors.text
+TitleText.TextSize = 20
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Parent = TitleBar
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Parent = sidebar
-titleLabel.Size = UDim2.new(1, -10, 0, 32)
-titleLabel.BackgroundTransparency = 1
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Font = fontPrimary
-titleLabel.TextSize = 22
-titleLabel.TextColor3 = palette.TextPrimary
-titleLabel.TextTransparency = 0
-titleLabel.Text = "AgathaScript"
+-- Search box (visual only)
+local SearchBox = Instance.new("Frame")
+SearchBox.Name = "Search"
+SearchBox.Size = UDim2.new(0, 300, 0, 32)
+SearchBox.Position = UDim2.new(0, 200, 0, 9)
+SearchBox.BackgroundColor3 = colors.panel
+SearchBox.BorderSizePixel = 0
+SearchBox.Parent = TitleBar
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0,6)
+uiCorner.Parent = SearchBox
+local SearchText = Instance.new("TextLabel")
+SearchText.BackgroundTransparency = 1
+SearchText.Size = UDim2.new(1,-16,1,0)
+SearchText.Position = UDim2.new(0,8,0,0)
+SearchText.Font = Enum.Font.Gotham
+SearchText.Text = "Search"
+SearchText.TextColor3 = colors.textDim
+SearchText.TextSize = 14
+SearchText.TextXAlignment = Enum.TextXAlignment.Left
+SearchText.Parent = SearchBox
 
-local searchBox = Instance.new("TextBox")
-searchBox.Name = "Search"
-searchBox.Parent = sidebar
-searchBox.Size = UDim2.new(1, -6, 0, 34)
-searchBox.Position = UDim2.new(0, 0, 0, 48)
-searchBox.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
-searchBox.BorderSizePixel = 0
-searchBox.Font = fontSecondary
-searchBox.PlaceholderText = "Search"
-searchBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
-searchBox.Text = ""
-searchBox.TextSize = 16
-searchBox.TextColor3 = palette.TextPrimary
-searchBox.TextXAlignment = Enum.TextXAlignment.Left
-searchBox.ClearTextOnFocus = false
-searchBox.ClipsDescendants = true
-
-local searchCorner = Instance.new("UICorner")
-searchCorner.CornerRadius = UDim.new(0, 10)
-searchCorner.Parent = searchBox
-
-local searchPadding = Instance.new("UIPadding")
-searchPadding.Parent = searchBox
-searchPadding.PaddingLeft = UDim.new(0, 10)
-
-local navContainer = Instance.new("Frame")
-navContainer.Name = "NavContainer"
-navContainer.Parent = sidebar
-navContainer.BackgroundTransparency = 1
-navContainer.Position = UDim2.new(0, 0, 0, 100)
-navContainer.Size = UDim2.new(1, -6, 1, -110)
-
-local navLayout = Instance.new("UIListLayout")
-navLayout.Parent = navContainer
-navLayout.Padding = UDim.new(0, 6)
-navLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-navLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local function createNavButton(name, order)
-	local button = Instance.new("TextButton")
-	button.Name = name .. "Button"
-	button.Parent = navContainer
-	button.Size = UDim2.new(1, 0, 0, 36)
-	button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	button.BackgroundTransparency = 1
-	button.BorderSizePixel = 0
-	button.Text = ""
-	button.AutoButtonColor = false
-	button.LayoutOrder = order
-
-	local indicator = Instance.new("Frame")
-	indicator.Name = "Indicator"
-	indicator.Parent = button
-	indicator.Position = UDim2.new(0, -8, 0, 4)
-	indicator.Size = UDim2.new(0, 3, 1, -8)
-	indicator.BackgroundColor3 = palette.Accent
-	indicator.BorderSizePixel = 0
-	indicator.Visible = false
-
-	local label = Instance.new("TextLabel")
-	label.Name = "Label"
-	label.Parent = button
-	label.AnchorPoint = Vector2.new(0, 0.5)
-	label.Position = UDim2.new(0, 6, 0.5, 0)
-	label.Size = UDim2.new(1, -12, 1, -6)
-	label.BackgroundTransparency = 1
-	label.Text = name
-	label.Font = fontSecondary
-	label.TextSize = 17
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextColor3 = palette.TextSecondary
-
-	local buttonStroke = Instance.new("UIStroke")
-	buttonStroke.Parent = button
-	buttonStroke.Color = Color3.fromRGB(42, 42, 42)
-	buttonStroke.Thickness = 1
-	buttonStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	buttonStroke.Transparency = 1
-
-	local buttonCorner = Instance.new("UICorner")
-	buttonCorner.CornerRadius = UDim.new(0, 10)
-	buttonCorner.Parent = button
-
-	return button
+-- Nav button factory
+local function createNavButton(text)
+    local btn = Instance.new("TextButton")
+    btn.Name = text .. "Button"
+    btn.Size = UDim2.new(1, 0, 0, 38)
+    btn.AutoButtonColor = false
+    btn.Text = text
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.TextColor3 = colors.text
+    btn.BackgroundColor3 = colors.navIdle
+    btn.BorderSizePixel = 0
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(28,28,28)
+    stroke.Thickness = 1
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Transparency = 0.7
+    stroke.Parent = btn
+    btn.MouseEnter:Connect(function()
+        if not btn:GetAttribute("ActiveTab") then
+            btn.BackgroundColor3 = colors.navHover
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if not btn:GetAttribute("ActiveTab") then
+            btn.BackgroundColor3 = colors.navIdle
+        end
+    end)
+    return btn
 end
 
-local navButtons = {
-	Misc = createNavButton("Misc", 1),
-	Settings = createNavButton("Settings", 2),
+-- Content area
+local ContentHolder = Instance.new("Frame")
+ContentHolder.Name = "ContentHolder"
+ContentHolder.Position = UDim2.new(0, 185, 0, 50)
+ContentHolder.Size = UDim2.new(1, -185, 1, -70)
+ContentHolder.BackgroundColor3 = colors.bgWindow
+ContentHolder.BorderSizePixel = 0
+ContentHolder.Parent = Main
+
+-- Bottom status bar
+local StatusBar = Instance.new("Frame")
+StatusBar.Name = "StatusBar"
+StatusBar.Size = UDim2.new(1, 0, 0, 20)
+StatusBar.Position = UDim2.new(0,0,1,-20)
+StatusBar.BackgroundColor3 = colors.bgSidebar
+StatusBar.BorderSizePixel = 0
+StatusBar.Parent = Main
+local StatusText = Instance.new("TextLabel")
+StatusText.BackgroundTransparency = 1
+StatusText.Size = UDim2.new(1,-12,1,0)
+StatusText.Position = UDim2.new(0,6,0,0)
+StatusText.Font = Enum.Font.Gotham
+StatusText.TextSize = 12
+StatusText.TextColor3 = colors.textDim
+StatusText.Text = "Ink Game | UI Preview | Placeholder"
+StatusText.TextXAlignment = Enum.TextXAlignment.Left
+StatusText.Parent = StatusBar
+
+-- Tabs registry
+local Tabs = {}
+local currentTab
+
+local function showTab(name)
+    if currentTab == name then return end
+    currentTab = name
+    for tabName, data in pairs(Tabs) do
+        local active = (tabName == name)
+        data.Frame.Visible = active
+        data.Button:SetAttribute("ActiveTab", active)
+        if active then
+            data.Button.BackgroundColor3 = colors.navActive
+        else
+            data.Button.BackgroundColor3 = colors.navIdle
+        end
+    end
+end
+
+-- Factories -----------------------------------------------------------------
+local function createSection(parent, titleText, sizeY)
+    local section = Instance.new("Frame")
+    section.Name = (titleText:gsub("%s","")) .. "Section"
+    section.Size = UDim2.new(1, -12, 0, sizeY or 180)
+    section.BackgroundColor3 = colors.panel
+    section.BorderSizePixel = 0
+    section.Parent = parent
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = colors.panelBorder
+    stroke.Thickness = 1
+    stroke.Parent = section
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,6)
+    corner.Parent = section
+    local header = Instance.new("TextLabel")
+    header.Name = "Header"
+    header.BackgroundTransparency = 1
+    header.Position = UDim2.new(0,12,0,6)
+    header.Size = UDim2.new(1,-24,0,20)
+    header.Font = Enum.Font.GothamSemibold
+    header.TextSize = 15
+    header.TextColor3 = colors.text
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Text = titleText
+    header.Parent = section
+    return section
+end
+
+local function createPlaceholderControl(parent, labelText)
+    local btn = Instance.new("TextButton")
+    btn.Name = (labelText:gsub("%s","")) .. "Control"
+    btn.AutoButtonColor = false
+    btn.Text = labelText
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.TextColor3 = colors.textDim
+    btn.BackgroundColor3 = colors.controlIdle
+    btn.BorderSizePixel = 0
+    btn.Size = UDim2.new(1, -24, 0, 30)
+    btn.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,4)
+    corner.Parent = btn
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = colors.strokeSoft
+    stroke.Transparency = 0.6
+    stroke.Thickness = 1
+    stroke.Parent = btn
+    btn.MouseEnter:Connect(function()
+        btn.BackgroundColor3 = colors.highlight
+    end)
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundColor3 = colors.controlIdle
+    end)
+    return btn
+end
+
+local function createToggle(parent, labelText, default)
+    local holder = Instance.new("Frame")
+    holder.Name = (labelText:gsub("%s","")) .. "Toggle"
+    holder.Size = UDim2.new(1, -24, 0, 28)
+    holder.BackgroundTransparency = 1
+    holder.Parent = parent
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1,-60,1,0)
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextSize = 13
+    label.Text = labelText
+    label.TextColor3 = colors.text
+    label.Parent = holder
+    local track = Instance.new("Frame")
+    track.Name = "Track"
+    track.Size = UDim2.new(0, 42, 0, 20)
+    track.Position = UDim2.new(1,-46,0.5,-10)
+    track.BackgroundColor3 = colors.toggleTrack
+    track.BorderSizePixel = 0
+    track.Parent = holder
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(1,0)
+    trackCorner.Parent = track
+    local knob = Instance.new("Frame")
+    knob.Name = "Knob"
+    knob.Size = UDim2.new(0, 18, 0, 18)
+    knob.Position = UDim2.new(0,1,0,1)
+    knob.BackgroundColor3 = colors.toggleOn
+    knob.BorderSizePixel = 0
+    knob.Parent = track
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1,0)
+    knobCorner.Parent = knob
+    local state = default and true or false
+    local function apply()
+        if state then
+            track.BackgroundColor3 = colors.toggleTrackOn
+            knob.Position = UDim2.new(1,-19,0,1)
+        else
+            track.BackgroundColor3 = colors.toggleTrack
+            knob.Position = UDim2.new(0,1,0,1)
+        end
+    end
+    apply()
+    track.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            state = not state
+            apply()
+        end
+    end)
+    return holder
+end
+
+local function registerTab(tabName)
+    local btn = createNavButton(tabName)
+    btn.Parent = Sidebar
+    local frame = Instance.new("Frame")
+    frame.Name = tabName .. "Tab"
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundTransparency = 1
+    frame.Visible = false
+    frame.Parent = ContentHolder
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "ScrollArea"
+    scroll.Size = UDim2.new(1, -16, 1, -16)
+    scroll.Position = UDim2.new(0, 8, 0, 8)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0,0,0,0)
+    scroll.ScrollBarThickness = 4
+    scroll.ScrollBarImageColor3 = Color3.fromRGB(70,70,70)
+    scroll.Parent = frame
+
+    local list = Instance.new("UIListLayout")
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0,10)
+    list.Parent = scroll
+    list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0,0,0,list.AbsoluteContentSize.Y + 12)
+    end)
+
+    -- Columns (simulate 2-col layout for some tabs)
+    local columnsHolder = Instance.new("Frame")
+    columnsHolder.Name = "Columns"
+    columnsHolder.Size = UDim2.new(1,0,0,0)
+    columnsHolder.BackgroundTransparency = 1
+    columnsHolder.Parent = scroll
+    local colLayout = Instance.new("UIListLayout")
+    colLayout.FillDirection = Enum.FillDirection.Horizontal
+    colLayout.Padding = UDim.new(0,12)
+    colLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    colLayout.Parent = columnsHolder
+
+    local function makeCol()
+        local col = Instance.new("Frame")
+        col.Name = "Col"
+        col.Size = UDim2.new(0.5, -6, 1, 0)
+        col.BackgroundTransparency = 1
+        col.Parent = columnsHolder
+        local stack = Instance.new("UIListLayout")
+        stack.SortOrder = Enum.SortOrder.LayoutOrder
+        stack.Padding = UDim.new(0,12)
+        stack.Parent = col
+        return col
+    end
+
+    local leftCol = makeCol()
+    local rightCol = makeCol()
+
+    if tabName == "Games" then
+        local s1 = createSection(leftCol, "Red Light, Green Light", 260)
+        createToggle(s1, "God Mode", true)
+        createPlaceholderControl(s1, "Finish Red Light, Green Light")
+        local s2 = createSection(rightCol, "Lights Out", 120)
+        createToggle(s2, "Safe Zone", true)
+        local s3 = createSection(rightCol, "Hide N' Seek", 300)
+        createToggle(s3, "Show Exit Doors (Yellow)", true)
+        createToggle(s3, "Show Doors (Cir/Tri/Sqr)", true)
+        createToggle(s3, "Show Players (Red/Blue)", false)
+    else
+        local only = createSection(leftCol, tabName .. " (Empty)", 140)
+        createPlaceholderControl(only, "Placeholder Button")
+        createToggle(only, "Placeholder Toggle", false)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        showTab(tabName)
+    end)
+
+    Tabs[tabName] = { Button = btn, Frame = frame }
+end
+
+-- Register nav tabs (full list from screenshot)
+local navOrder = {"Games","Auto-Win","Combat","Misc","Players","Peabert","Settings"}
+for _,name in ipairs(navOrder) do
+    registerTab(name)
+end
+
+-- Default tab
+showTab("Games")
+
+-- Center on resize
+local function center()
+    Main.Position = UDim2.new(0.5, -Main.AbsoluteSize.X/2, 0.5, -Main.AbsoluteSize.Y/2)
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    if workspace.CurrentCamera then
+        workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(center)
+    end
+end)
+center()
+
+-- Global toggle (RightControl)
+local UIS = game:GetService("UserInputService")
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.RightControl then
+        ScreenGui.Enabled = not ScreenGui.Enabled
+    end
+end)
+
+-- End of file
+--[[
+  Minimal UI recreation (only Misc + Settings tabs) inspired by provided screenshot.
+  No features / functionality beyond tab switching.
+  Drop this in a LocalScript (e.g., StarterPlayerScripts) or execute to build the GUI.
+]]
+
+-- Safety: destroy existing instance if re-run
+local existing = game:GetService("CoreGui"):FindFirstChild("AgathaUI") or game.Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("AgathaUI")
+if existing then existing:Destroy() end
+
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AgathaUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = playerGui
+
+-- Theme palette (approx.)
+local colors = {
+	background = Color3.fromRGB(15,15,15),
+	sidebar    = Color3.fromRGB(10,10,10),
+	panel      = Color3.fromRGB(22,22,22),
+	panelBorder= Color3.fromRGB(40,40,40),
+	accent     = Color3.fromRGB(255,170,0), -- subtle accent (unused now)
+	text       = Color3.fromRGB(220,220,220),
+	textDim    = Color3.fromRGB(140,140,140),
+	highlight  = Color3.fromRGB(60,60,60)
 }
 
--- Content region ---------------------------------------------------------------------
-local contentFrame = Instance.new("Frame")
-contentFrame.Name = "Content"
-contentFrame.Parent = mainFrame
-contentFrame.BackgroundColor3 = palette.Section
-contentFrame.BorderSizePixel = 0
-contentFrame.Position = UDim2.new(0, 210, 0, 0)
-contentFrame.Size = UDim2.new(1, -210, 1, 0)
-contentFrame.ZIndex = 2
-contentFrame.ClipsDescendants = true
+-- Main container
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 720, 0, 520)
+Main.Position = UDim2.new(0.5, -360, 0.5, -260)
+Main.BackgroundColor3 = colors.background
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
 
-local contentCorner = Instance.new("UICorner")
-contentCorner.CornerRadius = UDim.new(0, 18)
-contentCorner.Parent = contentFrame
+-- Shadow (simple)
+local shadow = Instance.new("ImageLabel")
+shadow.Name = "Shadow"
+shadow.ZIndex = 0
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://5028857084" -- soft shadow image
+shadow.ImageTransparency = 0.35
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(24,24,276,276)
+shadow.Size = UDim2.new(1, 32, 1, 32)
+shadow.Position = UDim2.new(0, -16, 0, -16)
+shadow.Parent = Main
 
-local contentPadding = Instance.new("UIPadding")
-contentPadding.Parent = contentFrame
-contentPadding.PaddingLeft = UDim.new(0, 24)
-contentPadding.PaddingRight = UDim.new(0, 24)
-contentPadding.PaddingTop = UDim.new(0, 26)
-contentPadding.PaddingBottom = UDim.new(0, 20)
-
-local tabTitle = Instance.new("TextLabel")
-tabTitle.Name = "TabTitle"
-tabTitle.Parent = contentFrame
-tabTitle.BackgroundTransparency = 1
-tabTitle.Size = UDim2.new(1, 0, 0, 28)
-tabTitle.TextXAlignment = Enum.TextXAlignment.Left
-tabTitle.Font = fontPrimary
-tabTitle.TextSize = 22
-tabTitle.TextColor3 = palette.TextPrimary
-tabTitle.Text = "Settings"
-
-local tabDivider = Instance.new("Frame")
-tabDivider.Name = "Divider"
-tabDivider.Parent = contentFrame
-tabDivider.Position = UDim2.new(0, 0, 0, 42)
-tabDivider.Size = UDim2.new(1, 0, 0, 1)
-tabDivider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-tabDivider.BorderSizePixel = 0
-
-local contentHolder = Instance.new("Frame")
-contentHolder.Name = "ContentHolder"
-contentHolder.Parent = contentFrame
-contentHolder.BackgroundTransparency = 1
-contentHolder.Position = UDim2.new(0, 0, 0, 54)
-contentHolder.Size = UDim2.new(1, 0, 1, -64)
-
-local contentLayout = Instance.new("UIListLayout")
-contentLayout.Parent = contentHolder
-contentLayout.Padding = UDim.new(0, 14)
-contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
--- Settings tab -----------------------------------------------------------------------
-local settingsSection = Instance.new("Frame")
-settingsSection.Name = "SettingsSection"
-settingsSection.Parent = contentHolder
-settingsSection.BackgroundColor3 = palette.Sidebar
-settingsSection.BorderSizePixel = 0
-settingsSection.Size = UDim2.new(1, 0, 0, 220)
-settingsSection.AutomaticSize = Enum.AutomaticSize.Y
-settingsSection.LayoutOrder = 1
-
-local settingsCorner = Instance.new("UICorner")
-settingsCorner.CornerRadius = UDim.new(0, 14)
-settingsCorner.Parent = settingsSection
-
-local settingsStroke = Instance.new("UIStroke")
-settingsStroke.Color = palette.SectionStroke
-settingsStroke.Thickness = 1
-settingsStroke.Parent = settingsSection
-
-local settingsPadding = Instance.new("UIPadding")
-settingsPadding.Parent = settingsSection
-settingsPadding.PaddingTop = UDim.new(0, 16)
-settingsPadding.PaddingBottom = UDim.new(0, 16)
-settingsPadding.PaddingLeft = UDim.new(0, 18)
-settingsPadding.PaddingRight = UDim.new(0, 18)
-
-local settingsLayout = Instance.new("UIListLayout")
-settingsLayout.Parent = settingsSection
-settingsLayout.Padding = UDim.new(0, 14)
-settingsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local settingsTitle = Instance.new("TextLabel")
-settingsTitle.Name = "SettingsTitle"
-settingsTitle.Parent = settingsSection
-settingsTitle.BackgroundTransparency = 1
-settingsTitle.Size = UDim2.new(1, 0, 0, 26)
-settingsTitle.Font = fontPrimary
-settingsTitle.TextSize = 20
-settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
-settingsTitle.TextColor3 = palette.TextPrimary
-settingsTitle.Text = "UI Settings"
-
-local divider = Instance.new("Frame")
-divider.Name = "SectionDivider"
-divider.Parent = settingsSection
-divider.BackgroundColor3 = Color3.fromRGB(48, 48, 48)
-divider.BorderSizePixel = 0
-divider.Size = UDim2.new(1, 0, 0, 1)
-
-local keybindRow = Instance.new("Frame")
-keybindRow.Name = "KeybindRow"
-keybindRow.Parent = settingsSection
-keybindRow.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-keybindRow.BorderSizePixel = 0
-keybindRow.Size = UDim2.new(1, 0, 0, 48)
-keybindRow.AutomaticSize = Enum.AutomaticSize.Y
-
-local keybindCorner = Instance.new("UICorner")
-keybindCorner.CornerRadius = UDim.new(0, 10)
-keybindCorner.Parent = keybindRow
-
-local keybindPadding = Instance.new("UIPadding")
-keybindPadding.Parent = keybindRow
-keybindPadding.PaddingLeft = UDim.new(0, 14)
-keybindPadding.PaddingRight = UDim.new(0, 14)
-keybindPadding.PaddingTop = UDim.new(0, 10)
-keybindPadding.PaddingBottom = UDim.new(0, 10)
-
-local keybindLabel = Instance.new("TextLabel")
-keybindLabel.Name = "KeybindLabel"
-keybindLabel.Parent = keybindRow
-keybindLabel.BackgroundTransparency = 1
-keybindLabel.Size = UDim2.new(0.5, -8, 1, 0)
-keybindLabel.Font = fontSecondary
-keybindLabel.TextSize = 16
-keybindLabel.TextXAlignment = Enum.TextXAlignment.Left
-keybindLabel.TextColor3 = palette.TextSecondary
-keybindLabel.Text = "Menu bind"
-
-local keybindButton = Instance.new("TextButton")
-keybindButton.Name = "KeybindButton"
-keybindButton.Parent = keybindRow
-keybindButton.AnchorPoint = Vector2.new(1, 0.5)
-keybindButton.Position = UDim2.new(1, 0, 0.5, 0)
-keybindButton.Size = UDim2.new(0.4, 0, 1, -4)
-keybindButton.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
-keybindButton.BorderSizePixel = 0
-keybindButton.AutoButtonColor = false
-keybindButton.Font = fontSecondary
-keybindButton.TextSize = 16
-keybindButton.TextColor3 = palette.TextPrimary
-keybindButton.Text = "Menu bind: " .. state.ToggleKeyName
-
-local keybindButtonCorner = Instance.new("UICorner")
-keybindButtonCorner.CornerRadius = UDim.new(0, 8)
-keybindButtonCorner.Parent = keybindButton
-
-local keybindStroke = Instance.new("UIStroke")
-keybindStroke.Color = Color3.fromRGB(60, 60, 60)
-keybindStroke.Thickness = 1
-keybindStroke.Parent = keybindButton
-
-local unloadButton = Instance.new("TextButton")
-unloadButton.Name = "UnloadButton"
-unloadButton.Parent = settingsSection
-unloadButton.Size = UDim2.new(1, 0, 0, 48)
-unloadButton.BackgroundColor3 = palette.Accent
-unloadButton.BorderSizePixel = 0
-unloadButton.AutoButtonColor = false
-unloadButton.Font = fontPrimary
-unloadButton.TextSize = 18
-unloadButton.TextColor3 = palette.TextPrimary
-unloadButton.Text = "Unload"
-
-local unloadCorner = Instance.new("UICorner")
-unloadCorner.CornerRadius = UDim.new(0, 12)
-unloadCorner.Parent = unloadButton
-
--- Misc tab (placeholder) -------------------------------------------------------------
-local miscSection = Instance.new("Frame")
-miscSection.Name = "MiscSection"
-miscSection.Parent = contentHolder
-miscSection.BackgroundColor3 = palette.Sidebar
-miscSection.BorderSizePixel = 0
-miscSection.Size = UDim2.new(1, 0, 0, 150)
-miscSection.Visible = false
-miscSection.AutomaticSize = Enum.AutomaticSize.Y
-miscSection.LayoutOrder = 1
-
-local miscCorner = Instance.new("UICorner")
-miscCorner.CornerRadius = UDim.new(0, 14)
-miscCorner.Parent = miscSection
-
-local miscStroke = Instance.new("UIStroke")
-miscStroke.Color = palette.SectionStroke
-miscStroke.Thickness = 1
-miscStroke.Parent = miscSection
-
-local miscPadding = Instance.new("UIPadding")
-miscPadding.Parent = miscSection
-miscPadding.PaddingTop = UDim.new(0, 20)
-miscPadding.PaddingBottom = UDim.new(0, 20)
-miscPadding.PaddingLeft = UDim.new(0, 18)
-miscPadding.PaddingRight = UDim.new(0, 18)
-
-local miscLabel = Instance.new("TextLabel")
-miscLabel.Name = "PlaceholderLabel"
-miscLabel.Parent = miscSection
-miscLabel.BackgroundTransparency = 1
-miscLabel.Size = UDim2.new(1, 0, 0, 24)
-miscLabel.Font = fontSecondary
-miscLabel.TextSize = 16
-miscLabel.TextColor3 = palette.TextSecondary
-miscLabel.TextXAlignment = Enum.TextXAlignment.Left
-miscLabel.Text = "No miscellaneous options available."
-
--- Tab management ---------------------------------------------------------------------
-local function setTab(tabName)
-	state.CurrentTab = tabName
-	tabTitle.Text = tabName
-	settingsSection.Visible = tabName == "Settings"
-	miscSection.Visible = tabName == "Misc"
-
-	for name, button in pairs(navButtons) do
-		local active = (name == tabName)
-		local label = button:FindFirstChild("Label")
-		local indicator = button:FindFirstChild("Indicator")
-		if label then
-			label.TextColor3 = active and palette.TextPrimary or palette.TextSecondary
-		end
-		if indicator then
-			indicator.Visible = active
-		end
-		button.BackgroundTransparency = active and 0.15 or 1
-
-		local stroke = button:FindFirstChildOfClass("UIStroke")
-		if stroke then
-			stroke.Transparency = active and 0.4 or 1
-		end
-	end
-end
-
-setTab("Settings")
-
--- Animated hover feedback for navigation buttons ------------------------------------
-local function bindNavButton(button, tabName)
-	trackConnection(button.MouseEnter:Connect(function()
-		if state.CurrentTab ~= tabName then
-			TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Linear), {
-				BackgroundTransparency = 0.55,
-			}):Play()
-		end
-	end))
-
-	trackConnection(button.MouseLeave:Connect(function()
-		if state.CurrentTab ~= tabName then
-			TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Linear), {
-				BackgroundTransparency = 1,
-			}):Play()
-		end
-	end))
-
-	trackConnection(button.MouseButton1Click:Connect(function()
-		if state.CurrentTab ~= tabName then
-			setTab(tabName)
-		end
-	end))
-end
-
-for name, button in pairs(navButtons) do
-	bindNavButton(button, name)
-end
-
--- Keybind capture --------------------------------------------------------------------
-local function updateKeybindDisplay()
-	keybindButton.Text = "Menu bind: " .. state.ToggleKeyName
-end
-
-local function toggleCapture(active)
-	state.CapturingKey = active
-	if active then
-		keybindButton.Text = "Press a key..."
-		keybindButton.TextColor3 = palette.Accent
-	else
-		keybindButton.TextColor3 = palette.TextPrimary
-		updateKeybindDisplay()
-	end
-end
-
-trackConnection(keybindButton.MouseButton1Click:Connect(function()
-	if state.CapturingKey then
-		toggleCapture(false)
-		return
-	end
-	toggleCapture(true)
-end))
-
-local function setToggleKey(newKey)
-	state.ToggleKey = newKey
-	state.ToggleKeyName = formatKeyName(newKey)
-	updateKeybindDisplay()
-end
-
--- Toggle handling --------------------------------------------------------------------
-local function setVisible(isVisible)
-	state.Visible = isVisible
-	screenGui.Enabled = isVisible
-end
-
-local function toggleUI()
-	setVisible(not state.Visible)
-end
-
-setVisible(true)
-
-trackConnection(UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-	if input.UserInputType ~= Enum.UserInputType.Keyboard then
-		return
-	end
-
-	if state.CapturingKey then
-		if input.KeyCode == Enum.KeyCode.Unknown then
-			return
-		end
-
-		if input.KeyCode == Enum.KeyCode.Escape then
-			toggleCapture(false)
-			return
-		end
-
-		toggleCapture(false)
-		setToggleKey(input.KeyCode)
-		return
-	end
-
-	if gameProcessedEvent then
-		return
-	end
-
-	if input.KeyCode == state.ToggleKey then
-		toggleUI()
-	end
-end))
-
--- Unload cleanup ---------------------------------------------------------------------
-local function cleanup()
-	for _, conn in ipairs(state.Connections) do
-		if conn and conn.Disconnect then
-			pcall(function()
-				conn:Disconnect()
+-- Dragging
+do
+	local dragging, dragStart, startPos
+	local inputConn, dragConn
+	local dragTarget = Main
+	local UIS = game:GetService("UserInputService")
+	dragTarget.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = dragTarget.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
 			end)
 		end
-	end
-	clearTable(state.Connections)
+	end)
+	UIS.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			dragTarget.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
 
-	if screenGui then
-		pcall(function()
-			screenGui.Enabled = false
-			screenGui.Parent = nil
-			screenGui:Destroy()
-		end)
-	end
+-- Sidebar
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 180, 1, 0)
+Sidebar.BackgroundColor3 = colors.sidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Main
 
-	if shadow then
-		pcall(function()
-			shadow:Destroy()
-		end)
-	end
+local sideLayout = Instance.new("UIListLayout")
+sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sideLayout.Padding = UDim.new(0, 4)
+sideLayout.Parent = Sidebar
 
-	if env.AgathaScript == state then
-		env.AgathaScript = nil
-	end
+local sidePadding = Instance.new("UIPadding")
+sidePadding.PaddingTop = UDim.new(0, 60)
+sidePadding.PaddingLeft = UDim.new(0, 8)
+sidePadding.PaddingRight = UDim.new(0, 8)
+sidePadding.Parent = Sidebar
 
-	local status, unloadFunction = pcall(function()
-		return env.unloadscript or env.unload
+-- Title Bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 48)
+TitleBar.BackgroundColor3 = colors.sidebar
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = Main
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Name = "Title"
+TitleText.BackgroundTransparency = 1
+TitleText.Position = UDim2.new(0, 12, 0, 0)
+TitleText.Size = UDim2.new(0, 160, 1, 0)
+TitleText.Font = Enum.Font.GothamSemibold
+TitleText.Text = "AgathaScript"
+TitleText.TextColor3 = colors.text
+TitleText.TextSize = 20
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Parent = TitleBar
+
+-- Faux search box (visual only)
+local SearchBox = Instance.new("Frame")
+SearchBox.Name = "Search"
+SearchBox.Size = UDim2.new(0, 280, 0, 32)
+SearchBox.Position = UDim2.new(0, 200, 0, 8)
+SearchBox.BackgroundColor3 = colors.panel
+SearchBox.BorderSizePixel = 0
+SearchBox.Parent = TitleBar
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0,6)
+uiCorner.Parent = SearchBox
+local SearchText = Instance.new("TextLabel")
+SearchText.BackgroundTransparency = 1
+SearchText.Size = UDim2.new(1,-16,1,0)
+SearchText.Position = UDim2.new(0,8,0,0)
+SearchText.Font = Enum.Font.Gotham
+SearchText.Text = "Search"
+SearchText.TextColor3 = colors.textDim
+SearchText.TextSize = 14
+SearchText.TextXAlignment = Enum.TextXAlignment.Left
+SearchText.Parent = SearchBox
+
+-- Utility for making nav buttons
+local function createNavButton(text)
+	local btn = Instance.new("TextButton")
+	btn.Name = text .. "Button"
+	btn.Size = UDim2.new(1, 0, 0, 36)
+	btn.AutoButtonColor = false
+	btn.Text = text
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 14
+	btn.TextColor3 = colors.textDim
+	btn.BackgroundColor3 = colors.panel
+	btn.BorderSizePixel = 0
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0,4)
+	corner.Parent = btn
+	btn.MouseEnter:Connect(function()
+		if not btn:GetAttribute("ActiveTab") then
+			btn.BackgroundColor3 = colors.highlight
+		end
+	end)
+	btn.MouseLeave:Connect(function()
+		if not btn:GetAttribute("ActiveTab") then
+			btn.BackgroundColor3 = colors.panel
+		end
+	end)
+	return btn
+end
+
+-- Content area
+local ContentHolder = Instance.new("Frame")
+ContentHolder.Name = "ContentHolder"
+ContentHolder.Position = UDim2.new(0, 180, 0, 48)
+ContentHolder.Size = UDim2.new(1, -180, 1, -48)
+ContentHolder.BackgroundColor3 = colors.background
+ContentHolder.BorderSizePixel = 0
+ContentHolder.Parent = Main
+
+-- Tabs table
+local Tabs = {}
+local currentTab
+
+local function showTab(name)
+	if currentTab == name then return end
+	currentTab = name
+	for tabName, data in pairs(Tabs) do
+		local active = (tabName == name)
+		data.Frame.Visible = active
+		data.Button:SetAttribute("ActiveTab", active)
+		if active then
+			data.Button.TextColor3 = colors.text
+			data.Button.BackgroundColor3 = colors.highlight
+		else
+			data.Button.TextColor3 = colors.textDim
+			data.Button.BackgroundColor3 = colors.panel
+		end
+	end
+end
+
+local function registerTab(tabName)
+	local btn = createNavButton(tabName)
+	btn.Parent = Sidebar
+	local frame = Instance.new("Frame")
+	frame.Name = tabName .. "Tab"
+	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.BackgroundTransparency = 1
+	frame.Visible = false
+	frame.Parent = ContentHolder
+
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Name = "ScrollArea"
+	scroll.Size = UDim2.new(1, -16, 1, -16)
+	scroll.Position = UDim2.new(0, 8, 0, 8)
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.CanvasSize = UDim2.new(0,0,0,0)
+	scroll.ScrollBarThickness = 4
+	scroll.ScrollBarImageColor3 = Color3.fromRGB(70,70,70)
+	scroll.Parent = frame
+
+	local list = Instance.new("UIListLayout")
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Padding = UDim.new(0,8)
+	list.Parent = scroll
+	list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scroll.CanvasSize = UDim2.new(0,0,0,list.AbsoluteContentSize.Y + 8)
 	end)
 
-	if status and type(unloadFunction) == "function" then
-		pcall(unloadFunction)
+	-- Placeholder panel inside each tab (visual only)
+	local placeholder = Instance.new("Frame")
+	placeholder.Name = "PlaceholderPanel"
+	placeholder.Size = UDim2.new(1, 0, 0, 140)
+	placeholder.BackgroundColor3 = colors.panel
+	placeholder.BorderSizePixel = 0
+	placeholder.Parent = scroll
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0,8)
+	corner.Parent = placeholder
+	local border = Instance.new("UIStroke")
+	border.Color = colors.panelBorder
+	border.Thickness = 1
+	border.Parent = placeholder
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.new(0,12,0,8)
+	title.Size = UDim2.new(1,-24,0,20)
+	title.Font = Enum.Font.GothamSemibold
+	title.TextSize = 16
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextColor3 = colors.text
+	title.Text = tabName .. " (Empty)"
+	title.Parent = placeholder
+	local subtitle = Instance.new("TextLabel")
+	subtitle.BackgroundTransparency = 1
+	subtitle.Position = UDim2.new(0,12,0,32)
+	subtitle.Size = UDim2.new(1,-24,0,18)
+	subtitle.Font = Enum.Font.Gotham
+	subtitle.TextSize = 13
+	subtitle.TextXAlignment = Enum.TextXAlignment.Left
+	subtitle.TextColor3 = colors.textDim
+	subtitle.Text = "No features yet. This is a placeholder panel."
+	subtitle.Parent = placeholder
+
+	btn.MouseButton1Click:Connect(function()
+		showTab(tabName)
+	end)
+
+	Tabs[tabName] = { Button = btn, Frame = frame }
+end
+
+-- Register only requested tabs
+registerTab("Misc")
+registerTab("Settings")
+
+-- Activate default
+showTab("Misc")
+
+-- Resize logic to keep centered if screen size changes
+local GuiService = game:GetService("GuiService")
+local function center()
+	local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+	Main.Position = UDim2.new(0.5, -Main.AbsoluteSize.X/2, 0.5, -Main.AbsoluteSize.Y/2)
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	if workspace.CurrentCamera then
+		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(center)
 	end
-end
+end)
+center()
 
-state.Unload = cleanup
-
-trackConnection(unloadButton.MouseButton1Click:Connect(function()
-	cleanup()
-end))
-
--- Fail-safe: remove UI if player leaves ----------------------------------------------
-local LocalPlayer = Players.LocalPlayer
-if LocalPlayer then
-	trackConnection(LocalPlayer.AncestryChanged:Connect(function(_, parent)
-		if not parent then
-			cleanup()
-		end
-	end))
-end
-
--- Public API for executors -----------------------------------------------------------
-state.Toggle = toggleUI
-state.SetVisibility = setVisible
-state.SetToggleKey = function(keyCode)
-	if keyCode and keyCode.EnumType == Enum.KeyCode then
-		setToggleKey(keyCode)
+-- Optional: Press RightControl to toggle UI visibility
+local UIS = game:GetService("UserInputService")
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.RightControl then
+		ScreenGui.Enabled = not ScreenGui.Enabled
 	end
-end
+end)
 
--- Final polish -----------------------------------------------------------------------
-updateKeybindDisplay()
-setTab("Settings")
+-- Done.
 
