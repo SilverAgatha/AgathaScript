@@ -433,6 +433,12 @@ do
 			end
 		end,
 	})
+	:AddKeyPicker("FlingKey", {
+		Mode = "Toggle",
+		SyncToggleState = true,
+		Text = "Fling",
+		Callback = function() end,
+	})
 
 	PlayerGroup:AddSlider("FlingPower", {
 		Text = "Fling Power",
