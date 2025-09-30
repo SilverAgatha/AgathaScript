@@ -418,7 +418,7 @@ do
 	-- AX-Premium key input + loader
 	ScriptsGroup:AddInput("AXKey", {
 		Text = "AX-Script",
-		Placeholder = "Enter AX-Premium key",
+		Placeholder = "Enter AX Premium key",
 		Default = "",
 		Numeric = false,
 		Finished = true,
@@ -442,6 +442,37 @@ do
 				Library:Notify({ Title = "AX-Premium", Description = "Loader executed", Time = 3 })
 			else
 				Library:Notify({ Title = "AX-Premium", Description = "Failed: " .. tostring(err), Time = 5 })
+			end
+		end,
+	})
+
+	-- Section: Chat Message (no header label to match AX style)
+	ScriptsGroup:AddInput("ChatMsg", {
+		Text = "Chat Message",
+		Placeholder = "Enter message to send",
+		Default = "",
+		Numeric = false,
+		Finished = true,
+		Callback = function(val) end,
+	})
+
+	ScriptsGroup:AddButton({
+		Text = "Send Chat Message",
+		Tooltip = "Run chatmessage script with your custom message",
+		Func = function()
+			local msg = Options.ChatMsg and Options.ChatMsg.Value or ""
+			if msg == "" then
+				Library:Notify({ Title = "Chat Message", Description = "Please enter a message first", Time = 3 })
+				return
+			end
+			local ok, err = pcall(function()
+				local chunk = string.format('message=%q;\nloadstring(game:HttpGet("https://raw.githubusercontent.com/SilverAgatha/AgathaScript/main/scripts/chatmessage.lua"))()', msg)
+				loadstring(chunk)()
+			end)
+			if ok then
+				Library:Notify({ Title = "Chat Message", Description = "Script executed", Time = 3 })
+			else
+				Library:Notify({ Title = "Chat Message", Description = "Failed: " .. tostring(err), Time = 5 })
 			end
 		end,
 	})
