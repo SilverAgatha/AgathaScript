@@ -64,6 +64,11 @@ local flightForce -- VectorForce for anti-gravity
 local flightAttachment
 local inputConns = {}
 local keyDown = {}
+-- Fling state
+local flingPower = 10000 -- default fling multiplier
+local flingRunning = false
+local flingThread
+local flingLastBaseVel -- used to restore velocity when disabling mid-impulse
 
 -- Services (moved above feature functions for clarity)
 local Players = game:GetService("Players")
@@ -254,6 +259,60 @@ local function enableFlight()
 	end)
 end
 
+--------------------------------------------------
+-- Fling Feature Logic
+--------------------------------------------------
+local function disableFling()
+	if not flingRunning then return end
+	flingRunning = false
+	-- Restore previous or zero velocity so player isn't launched
+	pcall(function()
+		local hrp = getHRP()
+		if hrp then
+			hrpp = getHRP(); if hrpp then hrpp.AssemblyLinearVelocity = (flingLastBaseVel or Vector3.new()) end
+		end
+	end)
+	flingThread = nil
+end
+
+local function enableFling()
+	if flingRunning then return end
+	flingRunning = true
+	flingThread = coroutine.create(function()
+		local movel = 0.1
+		while flingRunning do
+			-- Stop if UI unloaded or toggle turned off
+			if Library.Unloaded or not (Toggles.FlingEnabled and Toggles.FlingEnabled.Value) then
+				disableFling()
+				break
+			end
+			RunService.Heartbeat:Wait()
+			local hrp = getHRP()
+			if hrp then
+				local baseVel = hrp.AssemblyLinearVelocity
+				flingLastBaseVel = baseVel -- track last stable velocity
+				-- First strong fling impulse (scaled)
+				hrp.AssemblyLinearVelocity = baseVel * flingPower + Vector3.new(0, flingPower, 0)
+				RunService.RenderStepped:Wait()
+				-- Restore base velocity briefly
+				if not flingRunning then break end
+				hrp = getHRP()
+				if hrp then
+					hrp.AssemblyLinearVelocity = baseVel
+				end
+				RunService.Stepped:Wait()
+				if not flingRunning then break end
+				hrp = getHRP()
+				if hrp then
+					hrp.AssemblyLinearVelocity = baseVel + Vector3.new(0, movel, 0)
+				end
+				movel = -movel
+			end
+		end
+	end)
+	coroutine.resume(flingThread)
+end
+
 -- Input handling (created once)
 do
 	local began = UserInputService.InputBegan:Connect(function(input, gpe)
@@ -362,6 +421,32 @@ do
 		end,
 	})
 
+	PlayerGroup:AddToggle("FlingEnabled", {
+		Text = "Fling",
+		Tooltip = "Rapid velocity pulses to fling (may be patched in some games)",
+		Default = false,
+		Callback = function(v)
+			if v then
+				enableFling()
+			else
+				disableFling()
+			end
+		end,
+	})
+
+	PlayerGroup:AddSlider("FlingPower", {
+		Text = "Fling Power",
+		Default = flingPower,
+		Min = 1000,
+		Max = 50000,
+		Rounding = 0,
+		Tooltip = "Scale fling velocity multiplier (higher = stronger)",
+		Callback = function(val)
+			flingPower = val
+		end,
+	})
+
+
 	Options.FlightSpeed:OnChanged(function()
 		flightSpeed = Options.FlightSpeed.Value
 	end)
@@ -373,6 +458,11 @@ do
             end
         end)
     end
+	if Options.FlingPower then
+		Options.FlingPower:OnChanged(function()
+			flingPower = Options.FlingPower.Value
+		end)
+	end
 end
 
 --------------------------------------------------
@@ -578,6 +668,7 @@ Library:OnUnload(function()
 	disableFlight()
 	disableNoClip()
 	disableWalkSpeed()
+	disableFling()
 	for _, c in ipairs(inputConns) do
 		pcall(function() c:Disconnect() end)
 	end
