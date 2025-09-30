@@ -690,4 +690,3 @@ Next Steps:
  - Separate feature logic into /scripts modules to keep UI lean
  - Expand Settings (e.g., Theme presets, performance options) as needed
 ]]
-
