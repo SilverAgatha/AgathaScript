@@ -26,8 +26,7 @@ local SaveManager = loadstring(fetch("addons/SaveManager.lua"))()
 -- Basic window
 local Window = Library:CreateWindow({
 	Title = "AgathaScript",
-	Footer = "v0.1", -- change when you version bump
-	Icon = 95816097006870, -- placeholder icon id; swap for your own asset if desired
+	Footer = "AgathaScript | GlobalScript | V1.0", -- change when you version bump
 	NotifySide = "Right",
 	Center = false,
 	AutoShow = true,
@@ -39,13 +38,14 @@ pcall(function()
     if Enum.Font.Jura then
         Library:SetFont(Enum.Font.Jura)
     else
-        Library:SetFont(Enum.Font.Code)
+        Library:SetFont(Enum.Font.Jura)
     end
 end)
 
 -- Tabs (only Misc + Settings per request)
 local Tabs = {
 	Misc = Window:AddTab("Misc", "boxes"),
+	Others = Window:AddTab("Others", "code"),
 	Settings = Window:AddTab("Settings", "settings"),
 }
 
@@ -117,6 +117,60 @@ local function enableNoClip()
 end
 
 -- (Services already declared above)
+
+-- WalkSpeed modification state
+local walkSpeedConn
+local originalWalkSpeed
+local desiredWalkSpeed = 16 -- default Roblox walk speed; will sync with slider
+
+local function applyWalkSpeed()
+	if not (Toggles.WalkSpeedEnabled and Toggles.WalkSpeedEnabled.Value) then return end
+	local character = LocalPlayer.Character
+	if not character then return end
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	if not originalWalkSpeed then
+		originalWalkSpeed = hum.WalkSpeed
+	end
+	if hum.WalkSpeed ~= desiredWalkSpeed then
+		hum.WalkSpeed = desiredWalkSpeed
+	end
+end
+
+local function disableWalkSpeed()
+	if walkSpeedConn then
+		walkSpeedConn:Disconnect()
+		walkSpeedConn = nil
+	end
+	local character = LocalPlayer.Character
+	if character then
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum and originalWalkSpeed then
+			hum.WalkSpeed = originalWalkSpeed
+		end
+	end
+	originalWalkSpeed = nil
+end
+
+local function enableWalkSpeed()
+	if walkSpeedConn then return end
+	applyWalkSpeed()
+	-- Keep enforcing in case game scripts overwrite it or on respawn
+	walkSpeedConn = RunService.Stepped:Connect(function()
+		if Library.Unloaded or not (Toggles.WalkSpeedEnabled and Toggles.WalkSpeedEnabled.Value) then
+			disableWalkSpeed()
+			return
+		end
+		applyWalkSpeed()
+	end)
+	-- Reapply on character added
+	LocalPlayer.CharacterAdded:Connect(function()
+		if walkSpeedConn and Toggles.WalkSpeedEnabled and Toggles.WalkSpeedEnabled.Value then
+			task.wait(0.25)
+			applyWalkSpeed()
+		end
+	end)
+end
 
 local function getHRP()
 	local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -274,9 +328,123 @@ do
 		Callback = function() end,
 	})
 
+	PlayerGroup:AddToggle("WalkSpeedEnabled", {
+		Text = "Walk Speed",
+		Tooltip = "Override humanoid WalkSpeed (10-200)",
+		Default = false,
+		Callback = function(v)
+			if v then
+				enableWalkSpeed()
+			else
+				disableWalkSpeed()
+			end
+		end,
+	})
+	:AddKeyPicker("WalkSpeedKey", {
+		Mode = "Toggle",
+		SyncToggleState = true,
+		Text = "Walk Speed",
+		Callback = function() end,
+	})
+
+	PlayerGroup:AddSlider("WalkSpeedValue", {
+		Text = "Walk Speed Value",
+		Default = desiredWalkSpeed,
+		Min = 10,
+		Max = 200,
+		Rounding = 0,
+		Tooltip = "Set new humanoid WalkSpeed",
+		Callback = function(val)
+			desiredWalkSpeed = val
+			if Toggles.WalkSpeedEnabled and Toggles.WalkSpeedEnabled.Value then
+				applyWalkSpeed()
+			end
+		end,
+	})
+
 	Options.FlightSpeed:OnChanged(function()
 		flightSpeed = Options.FlightSpeed.Value
 	end)
+    if Options.WalkSpeedValue then
+        Options.WalkSpeedValue:OnChanged(function()
+            desiredWalkSpeed = Options.WalkSpeedValue.Value
+            if Toggles.WalkSpeedEnabled and Toggles.WalkSpeedEnabled.Value then
+                applyWalkSpeed()
+            end
+        end)
+    end
+end
+
+--------------------------------------------------
+-- Others Tab Content
+--------------------------------------------------
+do
+	local ScriptsGroup = Tabs.Others:AddLeftGroupbox("scripts", "code")
+
+	-- Section: Infinite Yield
+	ScriptsGroup:AddLabel("Infinite Yield")
+	ScriptsGroup:AddButton({
+		Text = "Load Infinite Yield",
+		Tooltip = "Execute Infinite Yield admin script",
+		Func = function()
+			local ok, err = pcall(function()
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+			end)
+			if ok then
+				Library:Notify({ Title = "Scripts", Description = "Infinite Yield loaded", Time = 3 })
+			else
+				Library:Notify({ Title = "Scripts", Description = "Failed: " .. tostring(err), Time = 5 })
+			end
+		end,
+	})
+
+	-- Section: Spolarium
+	ScriptsGroup:AddLabel("Spolarium")
+	ScriptsGroup:AddButton({
+		Text = "Load Spolarium",
+		Tooltip = "Execute Spolarium hub",
+		Func = function()
+			local ok, err = pcall(function()
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/SpolariumHub/Spolarium/refs/heads/main/MainLoader.lua"))()
+			end)
+			if ok then
+				Library:Notify({ Title = "Scripts", Description = "Spolarium loaded", Time = 3 })
+			else
+				Library:Notify({ Title = "Scripts", Description = "Failed: " .. tostring(err), Time = 5 })
+			end
+		end,
+	})
+
+	-- AX-Premium key input + loader
+	ScriptsGroup:AddInput("AXKey", {
+		Text = "AX-Script",
+		Placeholder = "Enter AX-Premium key",
+		Default = "",
+		Numeric = false,
+		Finished = true,
+		Callback = function(val) end,
+	})
+
+	ScriptsGroup:AddButton({
+		Text = "AX-Premium",
+		Tooltip = "Load AX-Premium using the provided key",
+		Func = function()
+			local key = Options.AXKey and Options.AXKey.Value or ""
+			if not key or key == "" then
+				Library:Notify({ Title = "AX-Premium", Description = "Please enter a key first", Time = 3 })
+				return
+			end
+			local ok, err = pcall(function()
+				local chunk = string.format('script_key="%s";\nloadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/104e8eb99b22ccb066698cc14d6736b4.lua"))()', key)
+				loadstring(chunk)()
+			end)
+			if ok then
+				Library:Notify({ Title = "AX-Premium", Description = "Loader executed", Time = 3 })
+			else
+				Library:Notify({ Title = "AX-Premium", Description = "Failed: " .. tostring(err), Time = 5 })
+			end
+		end,
+	})
 end
 
 --------------------------------------------------
@@ -288,7 +456,7 @@ do
 
 	MenuGroup:AddLabel("Menu Keybind")
 		:AddKeyPicker("MenuKeybind", {
-			Default = "Z",
+			Default = "Home",
 			NoUI = true, -- hide from keybind list UI (we expose our own control label above)
 			Text = "Menu Keybind",
 		})
@@ -339,6 +507,33 @@ do
 	pcall(function()
 		SaveManager:LoadAutoloadConfig()
 	end)
+
+	-- Force the Themes "Font Face" dropdown to reflect Jura instead of lingering on default "Code"
+	-- Some ThemeManager builds cache the dropdown value before we override the font; we resync it here.
+	pcall(function()
+		if Enum.Font.Jura then
+			Library:SetFont(Enum.Font.Jura) -- ensure actual font object is still Jura
+			local fontOption = Options.FontFace or Options.Font or Options.FontFamily
+			if fontOption then
+				-- Try common casings; match against the option's list if available.
+				local target = "Jura"
+				if fontOption.Value ~= target then
+					local list = rawget(fontOption, "List") or rawget(fontOption, "Values")
+					if list then
+						for _, v in ipairs(list) do
+							if string.lower(v) == string.lower(target) then
+								fontOption:SetValue(v)
+								break
+							end
+						end
+					else
+						-- Fallback: attempt direct set
+						pcall(function() fontOption:SetValue(target) end)
+					end
+				end
+			end
+		end
+	end)
 end
 
 -- Assign toggle key AFTER keypicker is created
@@ -351,6 +546,7 @@ Library:OnUnload(function()
 	-- Cleanup flight
 	disableFlight()
 	disableNoClip()
+	disableWalkSpeed()
 	for _, c in ipairs(inputConns) do
 		pcall(function() c:Disconnect() end)
 	end
