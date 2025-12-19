@@ -23,10 +23,25 @@ local Library = loadstring(fetch("Library.lua"))()
 local ThemeManager = loadstring(fetch("addons/ThemeManager.lua"))()
 local SaveManager = loadstring(fetch("addons/SaveManager.lua"))()
 
+-- Game Detection
+local placeId = game.PlaceId
+local gameId = game.GameId
+local isBladeBall = (placeId == 13772394625) or (gameId == 4777817887)
+
+-- Dynamic Footer Logic
+local scriptName = "GlobalScript"
+
+if isBladeBall then
+	scriptName = "Blade Ball"
+-- Add more games here:
+-- elseif placeId == 123456789 then
+-- 	scriptName = "Pls Donate"
+end
+
 -- Basic window
 local Window = Library:CreateWindow({
 	Title = "AgathaScript",
-	Footer = "AgathaScript | GlobalScript | V1.0", -- change when you version bump
+	Footer = "AgathaScript | " .. scriptName .. " | V1.0", -- change when you version bump
 	NotifySide = "Right",
 	Center = false,
 	AutoShow = true,
@@ -42,12 +57,18 @@ pcall(function()
     end
 end)
 
--- Tabs (only Misc + Settings per request)
-local Tabs = {
-	Misc = Window:AddTab("Misc", "boxes"),
-	Others = Window:AddTab("Others", "code"),
-	Settings = Window:AddTab("Settings", "settings"),
-}
+-- Tabs
+local Tabs = {}
+
+-- Game Specific Tabs (Added first to appear at the top)
+if isBladeBall then -- Blade Ball
+	Tabs.BladeBall = Window:AddTab("Blade Ball", "swords")
+end
+
+-- Standard Tabs
+Tabs.Misc = Window:AddTab("Misc", "boxes")
+Tabs.Others = Window:AddTab("Others", "code")
+Tabs.Settings = Window:AddTab("Settings", "settings")
 
 -- Shortcuts to dynamic option containers populated by the library
 local Options = Library.Options
@@ -569,6 +590,214 @@ do
 				Library:Notify({ Title = "Chat Message", Description = "Script executed", Time = 3 })
 			else
 				Library:Notify({ Title = "Chat Message", Description = "Failed: " .. tostring(err), Time = 5 })
+			end
+		end,
+	})
+end
+
+--------------------------------------------------
+-- Blade Ball Tab Content
+--------------------------------------------------
+if Tabs.BladeBall then
+	-- Auto Parry Logic
+	local parryThreshold = 0.45
+	local autoParryConn
+	local autoParryBallConn
+	local autoParryTargetConn
+	local parryCooldown = 0
+	local isParried = false
+
+	local function getBall()
+		local balls = workspace:FindFirstChild("Balls")
+		if not balls then return nil end
+		for _, ball in ipairs(balls:GetChildren()) do
+			if ball:GetAttribute("realBall") then
+				return ball
+			end
+		end
+		return nil
+	end
+
+	local function disableAutoParry()
+		if autoParryConn then autoParryConn:Disconnect(); autoParryConn = nil end
+		if autoParryBallConn then autoParryBallConn:Disconnect(); autoParryBallConn = nil end
+		if autoParryTargetConn then autoParryTargetConn:Disconnect(); autoParryTargetConn = nil end
+	end
+
+	local function enableAutoParry()
+		if autoParryConn then return end
+		
+		local VirtualInputManager = game:GetService("VirtualInputManager")
+		
+		-- Monitor for new balls to reset target tracking
+		local ballsFolder = workspace:WaitForChild("Balls", 5)
+		if ballsFolder then
+			-- Handle existing ball if any
+			local existingBall = getBall()
+			if existingBall then
+				if autoParryTargetConn then autoParryTargetConn:Disconnect() end
+				isParried = false
+				autoParryTargetConn = existingBall:GetAttributeChangedSignal("target"):Connect(function()
+					isParried = false
+				end)
+			end
+
+			autoParryBallConn = ballsFolder.ChildAdded:Connect(function(child)
+				if autoParryTargetConn then autoParryTargetConn:Disconnect(); autoParryTargetConn = nil end
+				isParried = false
+				
+				-- Wait for attributes?
+				task.wait(0.1)
+				if child:GetAttribute("realBall") then
+					autoParryTargetConn = child:GetAttributeChangedSignal("target"):Connect(function()
+						isParried = false
+					end)
+				end
+			end)
+		end
+
+		autoParryConn = RunService.PreSimulation:Connect(function()
+			local ball = getBall()
+			if not ball then return end
+			
+			local zoomies = ball:FindFirstChild("zoomies")
+			if not zoomies then return end
+			
+			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if not hrp then return end
+			
+			local speed = zoomies.VectorVelocity.Magnitude
+			if speed == 0 then return end
+			
+			local distance = (hrp.Position - ball.Position).Magnitude
+			local timeToHit = distance / speed
+			
+			-- Logic from source: target check + time check
+			if ball:GetAttribute("target") == LocalPlayer.Name and not isParried and timeToHit <= parryThreshold then
+				VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+				isParried = true
+			end
+		end)
+	end
+
+	-- Visualizer Logic
+	local visualizerPartBlue
+	local visualizerMeshBlue
+	local visualizerConn
+
+	local function disableVisualizer()
+		if visualizerConn then visualizerConn:Disconnect(); visualizerConn = nil end
+		if visualizerPartBlue then visualizerPartBlue:Destroy(); visualizerPartBlue = nil end
+		visualizerMeshBlue = nil
+	end
+
+	local function enableVisualizer()
+		if visualizerConn then return end
+		
+		-- Helper to create ring
+		local function createRing(name, color, transp)
+			local part = Instance.new("Part")
+			part.Name = name
+			part.Anchored = true
+			part.CanCollide = false
+			part.CastShadow = false
+			part.Material = Enum.Material.Neon
+			part.Color = color
+			part.Transparency = transp
+			part.Size = Vector3.new(1, 1, 1)
+			part.Parent = workspace
+			
+			local mesh = Instance.new("SpecialMesh")
+			mesh.MeshId = "rbxassetid://3270017" -- Standard Ring Mesh
+			mesh.Parent = part
+			
+			return part, mesh
+		end
+
+		visualizerPartBlue, visualizerMeshBlue = createRing("BladeBallVisualizerBlue", Color3.fromRGB(0, 170, 255), 0.6)
+
+		visualizerConn = RunService.RenderStepped:Connect(function()
+			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if not hrp or not visualizerPartBlue then return end
+
+			local ball = getBall()
+			local parryRange = 10
+			local ballDistance = 10
+			local ballSpeed = 0
+			local hasBall = false
+			
+			if ball then
+				hasBall = true
+				local zoomies = ball:FindFirstChild("zoomies")
+				ballDistance = (hrp.Position - ball.Position).Magnitude
+				
+				if zoomies then
+					ballSpeed = zoomies.VectorVelocity.Magnitude
+					if ballSpeed > 0 then
+						-- Parry happens when distance <= speed * parryThreshold
+						parryRange = math.max(10, ballSpeed * parryThreshold)
+					end
+				end
+			end
+
+			-- Orientation: Face the ball directly (3D)
+			-- Center on HRP (no offset) so the player is inside the ring
+			local targetPos = hasBall and ball.Position or (hrp.Position + hrp.CFrame.LookVector * 5)
+			local lookAt = CFrame.lookAt(hrp.Position, targetPos)
+			local ringCFrame = lookAt * CFrame.Angles(math.rad(90), 0, 0)
+			
+			visualizerPartBlue.CFrame = ringCFrame
+
+			-- Scaling: Mesh 3270017 (X/Y = Diameter, Z = Thickness)
+			-- Blue: Hit Zone (Parry Range)
+			visualizerMeshBlue.Scale = Vector3.new(parryRange * 2, parryRange * 2, 4)
+		end)
+	end
+
+	local BladeGroup = Tabs.BladeBall:AddLeftGroupbox("Main", "swords")
+	
+	BladeGroup:AddToggle("AutoParry", {
+		Text = "Auto Parry",
+		Default = false,
+		Tooltip = "Toggles the Auto Parry script",
+		Callback = function(v)
+			if v then
+				enableAutoParry()
+			else
+				disableAutoParry()
+			end
+		end,
+	})
+	:AddKeyPicker("AutoParryKey", {
+		Mode = "Toggle",
+		SyncToggleState = true,
+		Text = "Auto Parry",
+		Callback = function() end,
+	})
+
+	BladeGroup:AddSlider("ParryTiming", {
+		Text = "Parry Timing",
+		Default = 0.45,
+		Min = 0.1,
+		Max = 1.0,
+		Rounding = 2,
+		Tooltip = "Adjust reaction timing (Lower = Closer/Later, Higher = Farther/Earlier)",
+		Callback = function(val)
+			parryThreshold = val
+		end,
+	})
+
+	local VisualizerGroup = Tabs.BladeBall:AddRightGroupbox("Visualizer", "eye")
+
+	VisualizerGroup:AddToggle("Visualizer", {
+		Text = "Visualizer",
+		Default = false,
+		Tooltip = "Shows the auto parry range (Blue Ring)",
+		Callback = function(v)
+			if v then
+				enableVisualizer()
+			else
+				disableVisualizer()
 			end
 		end,
 	})
