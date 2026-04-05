@@ -593,6 +593,23 @@ do
 			end
 		end,
 	})
+
+	-- Section: Team Teleport
+	ScriptsGroup:AddLabel("Team Teleport")
+	ScriptsGroup:AddButton({
+		Text = "Load TeamTeleport",
+		Tooltip = "Execute Team Teleport script",
+		Func = function()
+			local ok, err = pcall(function()
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/SilverAgatha/AgathaScript/refs/heads/main/scripts/teamteleport.lua"))()
+			end)
+			if ok then
+				Library:Notify({ Title = "Scripts", Description = "TeamTeleport loaded", Time = 3 })
+			else
+				Library:Notify({ Title = "Scripts", Description = "Failed: " .. tostring(err), Time = 5 })
+			end
+		end,
+	})
 end
 
 --------------------------------------------------
