@@ -552,7 +552,7 @@ do
 				return
 			end
 			local ok, err = pcall(function()
-				local chunk = string.format('script_key="%s";\nloadstring(game:HttpGet("https://officialaxscripts.vercel.app/scripts/AX-Loader.lua"))()', key)
+				local chunk = string.format('YOUR_KEY="%s";\nloadstring(game:HttpGet("https://officialaxscripts.vercel.app/scripts/AX-Loader.lua"))()', key)
 				loadstring(chunk)()
 			end)
 			if ok then
